@@ -23,6 +23,7 @@ public:
     bool connect();
     bool start();
     void stop();
+    bool isRunning() const { return running; }
 
 private:
     std::string serverIP;
@@ -44,7 +45,14 @@ private:
     
     int windowWidth = 800;
     int windowHeight = 600;
-
+    int frameCountPlayer = 0;
+    int frameCountCoin = 0;
+    int frameCountZapper = 0;
+    int lastFrameTime = 0;
+    
+    void renderPlayer(int x, int y, int width, int height, bool jetpackOn);
+    void renderCoin(int x, int y, int width, int height);
+    void renderZapper(int x, int y, int width, int height);
     void networkLoop();
     void graphicsLoop();
     void handleServerMessage();

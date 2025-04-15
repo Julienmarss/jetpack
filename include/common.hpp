@@ -26,12 +26,9 @@
 #include <fstream>
 #include <sstream>
 
-// Constantes
 #define MAX_BUFFER_SIZE 4096
 #define MAX_PLAYERS 2
-#define POLL_TIMEOUT 50 // millisecondes
-
-// Constantes du jeu
+#define POLL_TIMEOUT 50
 #define PLAYER_WIDTH 32
 #define PLAYER_HEIGHT 32
 #define COIN_SIZE 16
