@@ -6,7 +6,7 @@
 #include <SDL2/SDL_image.h>
 
 Client::Client(const std::string& serverIP, int port)
-   : serverIP(serverIP), port(port) {
+   : serverIP(serverIP), port(port), gameState(WAITING), waitingPlayers(1) {
    for (int i = 0; i < MAX_PLAYERS; ++i) {
        players[i].id = i;
        players[i].alive = true;
@@ -14,46 +14,47 @@ Client::Client(const std::string& serverIP, int port)
 }
 
 Client::~Client() {
-   stop();
+    stop();
 }
 
 bool Client::connect() {
-   clientSocket = socket(AF_INET, SOCK_STREAM, 0);
-   if (clientSocket < 0) {
-       std::cerr << "Erreur lors de la création du socket" << std::endl;
-       return false;
-   }
-   
-   struct sockaddr_in serverAddr;
-   std::memset(&serverAddr, 0, sizeof(serverAddr));
-   serverAddr.sin_family = AF_INET;
-   serverAddr.sin_port = htons(port);
-   
-   if (inet_pton(AF_INET, serverIP.c_str(), &serverAddr.sin_addr) <= 0) {
-       std::cerr << "Adresse IP invalide: " << serverIP << std::endl;
-       close(clientSocket);
-       clientSocket = -1;
-       return false;
-   }
-   
-   if (::connect(clientSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
-       std::cerr << "Erreur lors de la connexion au serveur" << std::endl;
-       close(clientSocket);
-       clientSocket = -1;
-       return false;
-   }
-   
-   std::cout << "Connecté au serveur " << serverIP << ":" << port << std::endl;
-   
-   if (!Protocol::sendPacket(clientSocket, READY)) {
-       std::cerr << "Erreur lors de l'envoi du paquet READY" << std::endl;
-       close(clientSocket);
-       clientSocket = -1;
-       return false;
-   }
-   
-   return true;
-}
+    clientSocket = socket(AF_INET, SOCK_STREAM, 0);
+    if (clientSocket < 0) {
+        std::cerr << "Erreur lors de la création du socket" << std::endl;
+        return false;
+    }
+ 
+    struct sockaddr_in serverAddr;
+    std::memset(&serverAddr, 0, sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(port);
+ 
+    if (inet_pton(AF_INET, serverIP.c_str(), &serverAddr.sin_addr) <= 0) {
+        std::cerr << "Adresse IP invalide: " << serverIP << std::endl;
+        close(clientSocket);
+        clientSocket = -1;
+        return false;
+    }
+ 
+    if (::connect(clientSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
+        std::cerr << "Erreur lors de la connexion au serveur" << std::endl;
+        close(clientSocket);
+        clientSocket = -1;
+        return false;
+    }
+ 
+    std::cout << "Connecté au serveur " << serverIP << ":" << port << std::endl;
+ 
+    if (!Protocol::sendPacket(clientSocket, READY)) {
+        std::cerr << "Erreur lors de l'envoi du paquet READY" << std::endl;
+        close(clientSocket);
+        clientSocket = -1;
+        return false;
+    }
+ 
+    return true;
+ }
+ 
 
 bool Client::start() {
     if (clientSocket < 0) {
@@ -155,8 +156,6 @@ void Client::handleServerMessage() {
     }
     
     if (dataSize == 0) {
-        debugPrint("Connexion fermée proprement");
-        running = false;
         return;
     }
     
@@ -254,6 +253,22 @@ void Client::handleServerMessage() {
             break;
         }
         
+        case WAITING_STATUS: {
+            if (dataSize < (int)sizeof(int)) {
+                debugPrint("Paquet WAITING_STATUS invalide");
+                break;
+            }
+        
+            int connectedCount;
+            std::memcpy(&connectedCount, buffer, sizeof(int));
+            debugPrint("En attente de joueurs: " + std::to_string(connectedCount) + "/2");
+        
+            std::lock_guard<std::mutex> lock(gameMutex);
+            waitingPlayers = connectedCount;
+            gameState = WAITING;
+            break;
+        }
+
         default:
             debugPrint("Type de paquet non géré: " + std::to_string(packetType));
             break;
@@ -307,6 +322,17 @@ bool Client::initSDL() {
         return false;
     }
     
+    if (TTF_Init() == -1) {
+        std::cerr << "SDL_ttf Init Error: " << TTF_GetError() << std::endl;
+        return false;
+    }
+    
+    font = TTF_OpenFont("assets/jetpack_font.ttf", 28);
+    if (!font) {
+        std::cerr << "Erreur chargement police: " << TTF_GetError() << std::endl;
+        return false;
+    }
+
     std::cout << "Renderer created" << std::endl;
     
     // Force clear la fenêtre immédiatement
@@ -366,76 +392,86 @@ SDL_Texture* Client::loadTexture(const std::string& path) {
 void Client::render() {
     std::cout << "Rendering, gameState=" << (int)gameState << std::endl;
     std::lock_guard<std::mutex> lock(gameMutex);
-    
+
     // Fond noir
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
 
     if (gameState == WAITING) {
         std::cout << "Affichage de l'écran d'attente" << std::endl;
-        SDL_Rect msgRect = {windowWidth/4, windowHeight/2 - 40, windowWidth/2, 80};
-        SDL_SetRenderDrawColor(renderer, 40, 40, 40, 255);
-        SDL_RenderFillRect(renderer, &msgRect);
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        SDL_RenderDrawRect(renderer, &msgRect);
+
+        std::string message = "En attente de joueurs (" + std::to_string(waitingPlayers) + "/2)";
+        SDL_Color white = {255, 255, 255, 255};
+        SDL_Surface* textSurface = TTF_RenderText_Solid(font, message.c_str(), white);
+        if (textSurface) {
+            SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+            SDL_Rect textRect = {
+                windowWidth / 2 - textSurface->w / 2,
+                windowHeight / 2 - textSurface->h / 2,
+                textSurface->w,
+                textSurface->h
+            };
+            SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+            SDL_DestroyTexture(textTexture);
+            SDL_FreeSurface(textSurface);
+        }
+
         SDL_RenderPresent(renderer);
         return;
     }
-    
-    // Si le jeu est en cours
+
     // Fond
     if (textures["background"]) {
         SDL_Rect bgRect = {0, 0, windowWidth, windowHeight};
         SDL_RenderCopy(renderer, textures["background"], NULL, &bgRect);
     }
-    
+
     // Calcul du viewport
     int mapWidth = gameMap.getWidth();
     int mapHeight = gameMap.getHeight();
-    
+
     float scaleX = static_cast<float>(windowWidth) / mapWidth;
     float scaleY = static_cast<float>(windowHeight) / mapHeight;
-    
+
     float offsetX = 0;
     if (myPlayerId >= 0 && myPlayerId < MAX_PLAYERS && players[myPlayerId].alive) {
         float playerCenterX = players[myPlayerId].position.x + PLAYER_WIDTH / 2;
         offsetX = playerCenterX - windowWidth / (2 * scaleX);
-        
+
         if (offsetX < 0) offsetX = 0;
-        if (offsetX > mapWidth - windowWidth / scaleX) 
+        if (offsetX > mapWidth - windowWidth / scaleX)
             offsetX = mapWidth - windowWidth / scaleX;
     }
-    
+
     // Rendu des éléments
     int visibleStartX = static_cast<int>(offsetX);
     int visibleEndX = static_cast<int>(offsetX + windowWidth / scaleX);
-    
+
     for (int y = 0; y < mapHeight; y++) {
         for (int x = visibleStartX; x < visibleEndX; x++) {
             if (x < 0 || x >= mapWidth || y < 0 || y >= mapHeight) {
                 continue;
             }
-            
+
             CellType cell = gameMap.getCell(x, y);
-            
+
             int screenX = static_cast<int>((x - offsetX) * scaleX);
             int screenY = static_cast<int>(y * scaleY);
             int cellWidth = static_cast<int>(scaleX);
             int cellHeight = static_cast<int>(scaleY);
-            
-            // Show placeholder for cells
+
             if (cell == COIN) {
-                SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255); // Yellow for coins
+                SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
                 SDL_Rect coinRect = {screenX, screenY, cellWidth, cellHeight};
                 SDL_RenderFillRect(renderer, &coinRect);
             } else if (cell == ELECTRIC) {
-                SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255); // Red for electric
+                SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
                 SDL_Rect elecRect = {screenX, screenY, cellWidth, cellHeight};
                 SDL_RenderFillRect(renderer, &elecRect);
             }
         }
     }
-    
+
     // Joueurs
     for (const Player& player : players) {
         if (player.alive) {
@@ -443,17 +479,17 @@ void Client::render() {
             int screenY = static_cast<int>(player.position.y * scaleY);
             int playerWidth = static_cast<int>(PLAYER_WIDTH * scaleX);
             int playerHeight = static_cast<int>(PLAYER_HEIGHT * scaleY);
-            
-            // Placeholder for player
+
             SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
             SDL_Rect playerRect = {screenX, screenY, playerWidth, playerHeight};
             SDL_RenderFillRect(renderer, &playerRect);
         }
     }
-    
+
     // Mise à jour de l'écran
     SDL_RenderPresent(renderer);
 }
+
 
 void Client::networkLoop() {
     debugPrint("Thread réseau démarré");
@@ -489,6 +525,11 @@ void Client::cleanupSDL()
        SDL_DestroyWindow(window);
        window = nullptr;
    }
+   if (font) {
+    TTF_CloseFont(font);
+    font = nullptr;
+   }
+   TTF_Quit();
    IMG_Quit();
    SDL_Quit();
 }

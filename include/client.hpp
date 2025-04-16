@@ -13,6 +13,7 @@
 #include "protocol.hpp"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
+#include <SDL2/SDL_ttf.h>
 #include <map>
 
 class Client {
@@ -41,6 +42,7 @@ private:
     
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
+    TTF_Font* font = nullptr;
     std::map<std::string, SDL_Texture*> textures;
     
     int windowWidth = 800;
@@ -49,6 +51,8 @@ private:
     int frameCountCoin = 0;
     int frameCountZapper = 0;
     int lastFrameTime = 0;
+    int waitingPlayers = 1;
+
     
     void renderPlayer(int x, int y, int width, int height, bool jetpackOn);
     void renderCoin(int x, int y, int width, int height);

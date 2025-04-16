@@ -38,6 +38,7 @@ private:
     void checkCollisions(int playerIndex);
     void broadcastGameState();
     void endGame(int winnerId);
+    int getConnectedClientCount() const;
 };
 
 #endif /* SERVER_HPP */

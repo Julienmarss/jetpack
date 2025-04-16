@@ -70,8 +70,26 @@ bool Map::checkCollision(float x, float y, float width, float height, CellType c
 
 void Map::setupStartPositions() {
     startPositions.clear();
+    
+    // Recherche de positions initiales sûres (sans obstacles)
     for (int i = 0; i < MAX_PLAYERS; ++i) {
-        startPositions.push_back(Vector2(1, 1 + i * 3));
+        // Commencer plus loin du bord
+        int startX = 5;
+        int startY = 5 + i * 3;
+        
+        // Vérifier que la position n'est pas sur un obstacle
+        while (startX < width && (getCell(startX, startY) == COIN || getCell(startX, startY) == ELECTRIC)) {
+            startX++;
+        }
+        
+        if (startX >= width) {
+            startX = 5; // Fallback si on ne trouve pas de position valide
+        }
+        
+        debugPrint("Position de départ du joueur " + std::to_string(i) + ": (" + 
+                  std::to_string(startX) + "," + std::to_string(startY) + ")");
+        
+        startPositions.push_back(Vector2(startX, startY));
     }
 }
 
@@ -117,13 +135,16 @@ bool Map::fromString(const std::string& mapString) {
     data.resize(width * height, EMPTY);
     
     int y = 0;
+    int coinCount = 0;
+    int electricCount = 0;
+    
     while (std::getline(stream, line) && y < height) {
         for (size_t x = 0; x < line.length() && x < static_cast<size_t>(width); x++) {
             CellType cell = EMPTY;
             
             switch (line[x]) {
-                case 'c': cell = COIN; break;
-                case 'e': cell = ELECTRIC; break;
+                case 'c': cell = COIN; coinCount++; break;
+                case 'e': cell = ELECTRIC; electricCount++; break;
                 default: cell = EMPTY; break;
             }
             
@@ -134,5 +155,18 @@ bool Map::fromString(const std::string& mapString) {
     
     setupStartPositions();
     debugPrint("Carte chargée depuis la chaîne: " + std::to_string(width) + "x" + std::to_string(height));
+    debugPrint("Éléments sur la carte: " + std::to_string(coinCount) + " pièces, " + 
+              std::to_string(electricCount) + " obstacles électriques");
+    
+    // Vérifiez les positions initiales par rapport aux obstacles
+    const std::vector<Vector2>& positions = getStartPositions();
+    for (size_t i = 0; i < positions.size(); i++) {
+        Vector2 pos = positions[i];
+        CellType cellAtStart = getCell(pos.x, pos.y);
+        debugPrint("Position initiale joueur " + std::to_string(i) + " à (" + 
+                  std::to_string(pos.x) + "," + std::to_string(pos.y) + 
+                  "), type de cellule: " + std::to_string(cellAtStart));
+    }
+    
     return true;
 }

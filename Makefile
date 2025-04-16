@@ -20,7 +20,7 @@ CLIENT_OBJ = $(patsubst $(SRC_DIR)/%.cpp, $(OBJ_DIR)/%.o, $(CLIENT_SRC))
 SERVER_BIN = jetpack_server
 CLIENT_BIN = jetpack_client
 
-CLIENT_LIBS = -lSDL2 -lSDL2_image
+CLIENT_LIBS = -lSDL2 -lSDL2_image -lSDL2_ttf
 
 all: server client
 

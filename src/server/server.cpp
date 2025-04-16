@@ -111,37 +111,30 @@ void Server::handleConnections() {
         if (fds[0].revents & POLLIN) {
             if (connectedClients < MAX_PLAYERS) {
                 if (acceptClient()) {
-                    connectedClients++;
-                    
-                    fds.clear();
-                    fds.push_back({serverSocket, POLLIN, 0});
-                    for (int clientSocket : clientSockets) {
-                        if (clientSocket >= 0) {
-                            fds.push_back({clientSocket, POLLIN, 0});
-                        }
-                    }
-                    
+                    connectedClients = getConnectedClientCount(); // recalcule à jour
                     std::cout << "Client connecté, " << connectedClients << "/" << MAX_PLAYERS << " joueurs" << std::endl;
-                    
+                
                     if (connectedClients == MAX_PLAYERS) {
                         std::cout << "Tous les joueurs sont connectés, démarrage de la partie" << std::endl;
-                        
+                
                         const std::vector<Vector2>& startPositions = gameMap.getStartPositions();
                         for (size_t i = 0; i < MAX_PLAYERS && i < startPositions.size(); i++) {
                             players[i].position = startPositions[i];
                         }
-                        
+                
                         for (int i = 0; i < MAX_PLAYERS; i++) {
                             if (clientSockets[i] >= 0) {
                                 Protocol::sendMap(clientSockets[i], gameMap);
                             }
                         }
-                        
+                
                         gameState = RUNNING;
+                
                         std::thread gameThread(&Server::gameLoop, this);
                         gameThread.detach();
                     }
                 }
+                
             }
         }
         
@@ -187,6 +180,7 @@ bool Server::acceptClient() {
         close(clientSocket);
         return false;
     }
+    Protocol::sendWaitingStatus(clientSocket, getConnectedClientCount());
     players[clientIndex].id = clientIndex;
     players[clientIndex].score = 0;
     players[clientIndex].alive = true;
@@ -267,6 +261,13 @@ void Server::gameLoop() {
     
     debugPrint("Démarrage de la boucle de jeu");
     
+    debugPrint("Décompte avant démarrage: 3 secondes...");
+    for (int i = 3; i > 0; i--) {
+        debugPrint("Démarrage dans: " + std::to_string(i) + " secondes");
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+    debugPrint("C'est parti!");
+    
     while (running && gameState == RUNNING) {
         auto startTime = std::chrono::steady_clock::now();
         updateGameState();
@@ -278,12 +279,15 @@ void Server::gameLoop() {
         }
     }
     
-    debugPrint("Boucle de jeu finito attention");
+    debugPrint("Boucle de jeu terminée");
 }
 
 void Server::updateGameState() {
     for (int i = 0; i < MAX_PLAYERS; i++) {
         if (players[i].alive) {
+            float oldX = players[i].position.x;
+            float oldY = players[i].position.y;
+            
             if (players[i].jetpackOn) {
                 players[i].velocityY -= GRAVITY * 2;
                 if (players[i].velocityY < -10.0f) {
@@ -306,8 +310,16 @@ void Server::updateGameState() {
                 players[i].position.y = gameMap.getHeight() - PLAYER_HEIGHT;
                 players[i].velocityY = 0;
             }
+            
+            debugPrint("Joueur " + std::to_string(i) + " déplacé de (" + 
+                      std::to_string(oldX) + "," + std::to_string(oldY) + ") à (" + 
+                      std::to_string(players[i].position.x) + "," + 
+                      std::to_string(players[i].position.y) + ")");
+            
             checkCollisions(i);
+            
             if (players[i].position.x >= gameMap.getWidth() - PLAYER_WIDTH) {
+                debugPrint("Joueur " + std::to_string(i) + " a atteint la fin de la carte");
                 endGame(i);
                 return;
             }
@@ -318,6 +330,10 @@ void Server::updateGameState() {
 void Server::checkCollisions(int playerIndex) {
     Player& player = players[playerIndex];
     
+    debugPrint("Vérification des collisions pour joueur " + std::to_string(playerIndex) + 
+              " à position (" + std::to_string(player.position.x) + "," + 
+              std::to_string(player.position.y) + ")");
+    
     if (gameMap.checkCollision(player.position.x, player.position.y, PLAYER_WIDTH, PLAYER_HEIGHT, COIN)) {
         player.score++;
         debugPrint("Joueur " + std::to_string(playerIndex) + " a collecté une pièce, score: " + 
@@ -325,6 +341,8 @@ void Server::checkCollisions(int playerIndex) {
     }
     
     if (gameMap.checkCollision(player.position.x, player.position.y, PLAYER_WIDTH, PLAYER_HEIGHT, ELECTRIC)) {
+        debugPrint("Joueur " + std::to_string(playerIndex) + " est entré en collision avec ELECTRIC à (" + 
+                  std::to_string(player.position.x) + "," + std::to_string(player.position.y) + ")");
         player.alive = false;
         debugPrint("Joueur " + std::to_string(playerIndex) + " est mort");
         
@@ -337,6 +355,8 @@ void Server::checkCollisions(int playerIndex) {
                 lastAlivePlayer = i;
             }
         }
+        
+        debugPrint("Joueurs encore en vie: " + std::to_string(aliveCount));
         
         if (aliveCount <= 1) {
             endGame(lastAlivePlayer);
@@ -366,4 +386,13 @@ void Server::endGame(int winnerId) {
             Protocol::sendGameOver(clientSockets[i], winnerId, scores);
         }
     }
+}
+
+int Server::getConnectedClientCount() const {
+    int count = 0;
+    for (int sock : clientSockets) {
+        if (sock >= 0)
+            count++;
+    }
+    return count;
 }

@@ -25,6 +25,8 @@ public:
     static bool sendPlayerPosition(int socket, int playerId, const Vector2& position, bool jetpackOn);
     static bool sendGameState(int socket, GameState state, const std::array<Player, MAX_PLAYERS>& players);
     static bool sendGameOver(int socket, int winnerId, const std::array<int, MAX_PLAYERS>& scores);
+    static bool sendWaitingStatus(int socket, int connectedPlayers);
+
 };
 
 #endif /* PROTOCOL_HPP */

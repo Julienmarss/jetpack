@@ -141,3 +141,10 @@ bool Protocol::sendGameOver(int socket, int winnerId, const std::array<int, MAX_
     
     return sendPacket(socket, GAME_OVER, &data, sizeof(data));
 }
+
+bool Protocol::sendWaitingStatus(int socket, int connectedPlayers)
+{
+    return sendPacket(socket, WAITING_STATUS, &connectedPlayers, sizeof(int));
+}
+
+

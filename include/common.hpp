@@ -55,7 +55,8 @@ enum PacketType {
     MAP_DATA = 2,
     PLAYER_POS = 3,
     GAME_STATE = 4,
-    GAME_OVER = 5
+    GAME_OVER = 5,
+    WAITING_STATUS = 6
 };
 
 class Vector2 {
