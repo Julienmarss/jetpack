@@ -48,12 +48,32 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
+    // Main loop du programme - NÉCESSAIRE pour traiter les événements SDL
+    SDL_Event event;
+    bool jetpackOn = false;
+    
     while (client.isRunning()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-        //TODO DRAW TA MERE
+        // Traitement des événements SDL dans le thread principal
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                client.stop();
+                break;
+            } else if (event.type == SDL_KEYDOWN) {
+                if (event.key.keysym.sym == SDLK_SPACE) {
+                    jetpackOn = true;
+                    client.sendPlayerPosition(jetpackOn);
+                }
+            } else if (event.type == SDL_KEYUP) {
+                if (event.key.keysym.sym == SDLK_SPACE) {
+                    jetpackOn = false;
+                    client.sendPlayerPosition(jetpackOn);
+                }
+            }
+        }
+        
+        // Petite pause pour éviter de surcharger le CPU
+        std::this_thread::sleep_for(std::chrono::milliseconds(16)); // ~60 FPS
     }
-
 
     return 0;
 }

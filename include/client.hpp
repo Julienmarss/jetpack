@@ -25,6 +25,7 @@ public:
     bool start();
     void stop();
     bool isRunning() const { return running; }
+    void sendPlayerPosition(bool jetpackOn);
 
 private:
     std::string serverIP;
@@ -60,10 +61,10 @@ private:
     void networkLoop();
     void graphicsLoop();
     void handleServerMessage();
-    void sendPlayerPosition(bool jetpackOn);
     bool initSDL();
     SDL_Texture* loadTexture(const std::string& path);
     void render();
+    void renderTestPattern();
     void cleanupSDL();
 };
 
