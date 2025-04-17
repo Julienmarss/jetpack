@@ -8,6 +8,7 @@ COMMON_DIR = $(SRC_DIR)/common
 SERVER_DIR = $(SRC_DIR)/server
 CLIENT_DIR = $(SRC_DIR)/client
 OBJ_DIR = obj
+BIN_DIR = bin
 
 COMMON_SRC = $(wildcard $(COMMON_DIR)/*.cpp)
 SERVER_SRC = $(wildcard $(SERVER_DIR)/*.cpp)
@@ -43,14 +44,17 @@ $(OBJ_DIR)/server/%.o: $(SERVER_DIR)/%.cpp | $(OBJ_DIR)/server
 $(OBJ_DIR)/client/%.o: $(CLIENT_DIR)/%.cpp | $(OBJ_DIR)/client
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
-$(BIN_DIR) $(OBJ_DIR) $(OBJ_DIR)/server $(OBJ_DIR)/client $(OBJ_DIR)/common:
+$(BIN_DIR):
+	mkdir -p $@
+
+$(OBJ_DIR)/server $(OBJ_DIR)/client $(OBJ_DIR)/common:
 	mkdir -p $@
 
 clean:
 	rm -rf $(OBJ_DIR)
 
 fclean: clean
-	rm -rf $(BIN_DIR)
+	rm -f $(BIN_DIR)/$(SERVER_BIN) $(BIN_DIR)/$(CLIENT_BIN)
 
 re: fclean all
 

@@ -14,6 +14,7 @@
 #include <SFML/Graphics.hpp>
 #include <SFML/Window.hpp>
 #include <SFML/System.hpp>
+#include <SFML/Audio.hpp>
 #include <map>
 
 class Client {
@@ -46,18 +47,34 @@ private:
     std::map<std::string, sf::Texture> textures;
     std::map<std::string, sf::Sprite> sprites;
     
+    int currentPlayerFrame = 0;
+    int currentCoinFrame = 0;
+    int currentZapperFrame = 0;
+    sf::Clock animationClock;
+    
+    sf::Sound jetpackSound;
+    sf::Sound coinSound;
+    sf::Sound zapperSound;
+    sf::Music backgroundMusic;
+    std::map<std::string, sf::SoundBuffer> soundBuffers;
+    
     int windowWidth = 800;
     int windowHeight = 600;
-    int frameCountPlayer = 0;
-    int frameCountCoin = 0;
-    int frameCountZapper = 0;
-    int lastFrameTime = 0;
     int waitingPlayers = 1;
+    bool jetpackActive = false;
 
-    
     void networkLoop();
     void graphicsLoop();
     void handleServerMessage();
+    void render();
+    
+    bool loadAssets();
+    void initWindow();
+    
+    void renderPlayer(int x, int y, int width, int height, bool jetpackOn);
+    void renderCoin(int x, int y, int width, int height);
+    void renderZapper(int x, int y, int width, int height);
+    void handleInput();
 };
 
 #endif /* CLIENT_HPP */

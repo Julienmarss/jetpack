@@ -24,31 +24,31 @@ bool Protocol::sendPacket(int socket, int packetType, const void* data, int data
 int Protocol::receivePacket(int socket, int& packetType, void* buffer, int bufferSize) {
     PacketHeader header;
     int received = recv(socket, &header, sizeof(header), 0);
-    
+
     if (received <= 0) {
         if (received == 0) {
-            debugPrint("Connexion fermée");
+            debugPrint("Connexion fermée (recv = 0)");
         } else {
-            debugPrint("Erreur lors de la réception de l'en-tête du paquet");
+            debugPrint("Erreur lors de la réception de l'en-tête du paquet : " + std::string(strerror(errno)));
         }
         return received;
     }
-    
+
     packetType = header.type;
     int dataLength = header.length;
-    
+
     debugPrint("En-tête de paquet reçu: type=" + std::to_string(packetType) + 
-              ", taille=" + std::to_string(dataLength));
-    
+               ", taille=" + std::to_string(dataLength));
+
     if (dataLength > bufferSize) {
         debugPrint("Données de paquet trop grandes pour le buffer");
         return -1;
     }
-    
+
     if (dataLength > 0) {
         received = recv(socket, buffer, dataLength, 0);
         if (received <= 0) {
-            debugPrint("Erreur lors de la réception des données du paquet");
+            debugPrint("Erreur lors de la réception des données du paquet : " + std::string(strerror(errno)));
             return received;
         }
         if (received < dataLength) {
@@ -56,15 +56,18 @@ int Protocol::receivePacket(int socket, int& packetType, void* buffer, int buffe
             return -1;
         }
     }
-    
+
     return dataLength;
 }
+
 
 bool Protocol::sendMap(int socket, const Map& map)
 {
     std::string mapString = map.toString();
+    debugPrint("Envoi de la carte: " + std::to_string(mapString.length()) + " octets");
     return sendPacket(socket, MAP_DATA, mapString.c_str(), mapString.length());
 }
+
 
 bool Protocol::receiveMap(int socket, Map& map)
 {

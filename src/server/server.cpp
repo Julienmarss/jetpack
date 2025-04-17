@@ -365,3 +365,13 @@ void Server::endGame(int winnerId) {
         }
     }
 }
+
+int Server::getConnectedClientCount() const {
+    int count = 0;
+    for (int socket : clientSockets) {
+        if (socket >= 0) {
+            count++;
+        }
+    }
+    return count;
+}
