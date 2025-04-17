@@ -80,90 +80,6 @@ void Server::stop() {
     std::cout << "Serveur arrêté" << std::endl;
 }
 
-void Server::handleConnections() {
-    std::vector<pollfd> fds;
-    fds.push_back({serverSocket, POLLIN, 0});
-    
-    for (int clientSocket : clientSockets) {
-        if (clientSocket >= 0) {
-            fds.push_back({clientSocket, POLLIN, 0});
-        }
-    }
-    
-    int connectedClients = 0;
-    for (int socket : clientSockets) {
-        if (socket >= 0) {
-            connectedClients++;
-        }
-    }
-    
-    while (running) {
-        int ready = poll(fds.data(), fds.size(), POLL_TIMEOUT);
-        
-        if (ready <= 0) {
-            if (ready < 0 && errno != EINTR) {
-                std::cerr << "Erreur de poll: " << strerror(errno) << std::endl;
-                break;
-            }
-            continue;
-        }
-        
-        if (fds[0].revents & POLLIN) {
-            if (connectedClients < MAX_PLAYERS) {
-                if (acceptClient()) {
-                    connectedClients++;
-                    
-                    fds.clear();
-                    fds.push_back({serverSocket, POLLIN, 0});
-                    for (int clientSocket : clientSockets) {
-                        if (clientSocket >= 0) {
-                            fds.push_back({clientSocket, POLLIN, 0});
-                        }
-                    }
-                    
-                    std::cout << "Client connecté, " << connectedClients << "/" << MAX_PLAYERS << " joueurs" << std::endl;
-                    
-                    if (connectedClients == MAX_PLAYERS) {
-                        std::cout << "Tous les joueurs sont connectés, démarrage de la partie" << std::endl;
-                        
-                        const std::vector<Vector2>& startPositions = gameMap.getStartPositions();
-                        for (size_t i = 0; i < MAX_PLAYERS && i < startPositions.size(); i++) {
-                            players[i].position = startPositions[i];
-                        }
-                        
-                        for (int i = 0; i < MAX_PLAYERS; i++) {
-                            if (clientSockets[i] >= 0) {
-                                Protocol::sendMap(clientSockets[i], gameMap);
-                            }
-                        }
-                        
-                        gameState = RUNNING;
-                        std::thread gameThread(&Server::gameLoop, this);
-                        gameThread.detach();
-                    }
-                }
-            }
-        }
-        
-        for (size_t i = 1; i < fds.size(); i++) {
-            if (fds[i].revents & POLLIN) {
-                int clientIndex = -1;
-                
-                for (int j = 0; j < MAX_PLAYERS; j++) {
-                    if (clientSockets[j] == fds[i].fd) {
-                        clientIndex = j;
-                        break;
-                    }
-                }
-                
-                if (clientIndex >= 0) {
-                    handleClientMessage(clientIndex);
-                }
-            }
-        }
-    }
-}
-
 bool Server::acceptClient() {
     struct sockaddr_in clientAddr;
     socklen_t addrLen = sizeof(clientAddr);
@@ -261,11 +177,93 @@ void Server::handleClientMessage(int clientIndex) {
     }
 }
 
+void Server::handleConnections() {
+    std::vector<pollfd> fds;
+    
+    while (running) {
+        // Mise à jour des descripteurs de fichiers
+        fds.clear();
+        fds.push_back({serverSocket, POLLIN, 0});
+        for (int clientSocket : clientSockets) {
+            if (clientSocket >= 0) {
+                fds.push_back({clientSocket, POLLIN, 0});
+            }
+        }
+        
+        // Obtenir le nombre actuel de clients connectés
+        int connectedClients = getConnectedClientCount();
+        
+        int ready = poll(fds.data(), fds.size(), POLL_TIMEOUT);
+        
+        if (ready <= 0) {
+            if (ready < 0 && errno != EINTR) {
+                std::cerr << "Erreur de poll: " << strerror(errno) << std::endl;
+                break;
+            }
+            continue;
+        }
+        
+        if (fds[0].revents & POLLIN) {
+            if (acceptClient()) {
+                connectedClients = getConnectedClientCount(); // Mise à jour après acceptation
+                
+                std::cout << "Client connecté, " << connectedClients << "/" << MAX_PLAYERS << " joueurs" << std::endl;
+                
+                if (connectedClients >= MAX_PLAYERS) {
+                    std::cout << "Tous les joueurs sont connectés, démarrage de la partie" << std::endl;
+                    
+                    const std::vector<Vector2>& startPositions = gameMap.getStartPositions();
+                    for (size_t i = 0; i < MAX_PLAYERS && i < startPositions.size(); i++) {
+                        players[i].position = startPositions[i];
+                    }
+                    
+                    for (int i = 0; i < MAX_PLAYERS; i++) {
+                        if (clientSockets[i] >= 0) {
+                            Protocol::sendMap(clientSockets[i], gameMap);
+                        }
+                    }
+                    
+                    gameState = RUNNING;
+                    broadcastGameState(); // Ajout crucial: informer les clients du changement d'état
+                    
+                    std::thread gameThread(&Server::gameLoop, this);
+                    gameThread.detach();
+                }
+            }
+        }
+        
+        for (size_t i = 1; i < fds.size(); i++) {
+            if (fds[i].revents & POLLIN) {
+                int clientIndex = -1;
+                
+                for (int j = 0; j < MAX_PLAYERS; j++) {
+                    if (clientSockets[j] == fds[i].fd) {
+                        clientIndex = j;
+                        break;
+                    }
+                }
+                
+                if (clientIndex >= 0) {
+                    handleClientMessage(clientIndex);
+                }
+            }
+        }
+    }
+}
+
 void Server::gameLoop() {
     const int TICKS_PER_SECOND = 60;
     const std::chrono::milliseconds TICK_DURATION(1000 / TICKS_PER_SECOND);
     
     debugPrint("Démarrage de la boucle de jeu");
+    
+    debugPrint("Décompte avant démarrage: 3 secondes...");
+    for (int i = 3; i > 0; i--) {
+        debugPrint("Démarrage dans: " + std::to_string(i) + " secondes");
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        broadcastGameState(); // Envoi régulier aux clients
+    }
+    debugPrint("C'est parti!");
     
     while (running && gameState == RUNNING) {
         auto startTime = std::chrono::steady_clock::now();
@@ -278,7 +276,7 @@ void Server::gameLoop() {
         }
     }
     
-    debugPrint("Boucle de jeu finito attention");
+    debugPrint("Boucle de jeu terminée");
 }
 
 void Server::updateGameState() {

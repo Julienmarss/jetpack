@@ -11,9 +11,9 @@
 #include "common.hpp"
 #include "map.hpp"
 #include "protocol.hpp"
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
-#include <SDL2/SDL_ttf.h>
+#include <SFML/Graphics.hpp>
+#include <SFML/Window.hpp>
+#include <SFML/System.hpp>
 #include <map>
 
 class Client {
@@ -41,10 +41,10 @@ private:
     std::thread graphicsThread;
     std::mutex gameMutex;
     
-    SDL_Window* window = nullptr;
-    SDL_Renderer* renderer = nullptr;
-    TTF_Font* font = nullptr;
-    std::map<std::string, SDL_Texture*> textures;
+    sf::RenderWindow window;
+    sf::Font font;
+    std::map<std::string, sf::Texture> textures;
+    std::map<std::string, sf::Sprite> sprites;
     
     int windowWidth = 800;
     int windowHeight = 600;
@@ -55,17 +55,9 @@ private:
     int waitingPlayers = 1;
 
     
-    void renderPlayer(int x, int y, int width, int height, bool jetpackOn);
-    void renderCoin(int x, int y, int width, int height);
-    void renderZapper(int x, int y, int width, int height);
     void networkLoop();
     void graphicsLoop();
     void handleServerMessage();
-    bool initSDL();
-    SDL_Texture* loadTexture(const std::string& path);
-    void render();
-    void renderTestPattern();
-    void cleanupSDL();
 };
 
 #endif /* CLIENT_HPP */

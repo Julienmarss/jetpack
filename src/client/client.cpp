@@ -62,11 +62,6 @@ bool Client::start() {
         return false;
     }
     
-    if (!initSDL()) {
-        std::cerr << "Erreur lors de l'initialisation de SDL" << std::endl;
-        return false;
-    }
-    
     running = true;
     
     try {
@@ -104,20 +99,17 @@ void Client::stop() {
 void Client::graphicsLoop() {
     debugPrint("Thread graphique démarré");
     
-    while (running) {
-        // Traitez les événements
-        SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT) {
+    while (running && window.isOpen()) {
+        sf::Event event;
+        while (window.pollEvent(event)) {
+            if (event.type == sf::Event::Closed) {
+                window.close();
                 running = false;
-                break;
             }
         }
         
-        // Rendu
         render();
         
-        // Évitez les mises à jour trop fréquentes
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
     
@@ -275,143 +267,29 @@ void Client::handleServerMessage() {
     }
 }
 
-void Client::sendPlayerPosition(bool jetpackOn) {
-   if (myPlayerId < 0 || myPlayerId >= MAX_PLAYERS) {
-       return;
-   }
-   
-   Protocol::sendPlayerPosition(clientSocket, myPlayerId, players[myPlayerId].position, jetpackOn);
-}
-
-bool Client::initSDL() {
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-        std::cerr << "SDL Init Error: " << SDL_GetError() << std::endl;
-        return false;
-    }
-    
-    std::cout << "SDL Video initialized" << std::endl;
-    
-    int imgFlags = IMG_INIT_PNG;
-    if (!(IMG_Init(imgFlags) & imgFlags)) {
-        std::cerr << "SDL_image Init Error: " << IMG_GetError() << std::endl;
-        SDL_Quit();
-        return false;
-    }
-    
-    std::cout << "SDL_image initialized" << std::endl;
-    
-    window = SDL_CreateWindow("Jetpack Joyride", 
-                             SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                             windowWidth, windowHeight, SDL_WINDOW_SHOWN);
-    if (!window) {
-        std::cerr << "Window creation error: " << SDL_GetError() << std::endl;
-        IMG_Quit();
-        SDL_Quit();
-        return false;
-    }
-    
-    std::cout << "Window created" << std::endl;
-    
-    // Modifié pour ajouter PRESENTVSYNC
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    if (!renderer) {
-        std::cerr << "Renderer creation error: " << SDL_GetError() << std::endl;
-        SDL_DestroyWindow(window);
-        IMG_Quit();
-        SDL_Quit();
-        return false;
-    }
-    
-    std::cout << "Renderer created" << std::endl;
-    
-    // Force clear la fenêtre immédiatement
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
-    SDL_RenderPresent(renderer);
-    
-    // Chargement des textures
-    textures["background"] = loadTexture("assets/background.png");
-    std::cout << "Background texture loaded: " << (textures["background"] != nullptr) << std::endl;
-    
-    textures["player"] = loadTexture("assets/player_sprite_sheet.png");
-    std::cout << "Player texture loaded: " << (textures["player"] != nullptr) << std::endl;
-    
-    textures["coin"] = loadTexture("assets/coins_sprite_sheet.png");
-    std::cout << "Coin texture loaded: " << (textures["coin"] != nullptr) << std::endl;
-    
-    textures["electric"] = loadTexture("assets/zapper_sprite_sheet.png");
-    std::cout << "Electric texture loaded: " << (textures["electric"] != nullptr) << std::endl;
-    
-    std::cout << "SDL initialized successfully" << std::endl;
-    return true;
-}
-
-SDL_Texture* Client::loadTexture(const std::string& path) {
-    std::cout << "Loading texture: " << path << std::endl;
-    
-    if (path.empty()) {
-        std::cerr << "Empty path specified for texture" << std::endl;
-        return nullptr;
-    }
-    
-    // Vérifier si le fichier existe
-    std::ifstream file(path);
-    if (!file.good()) {
-        std::cerr << "Cannot open texture file: " << path << std::endl;
-        return nullptr;
-    }
-    file.close();
-    
-    SDL_Surface* surface = IMG_Load(path.c_str());
-    if (!surface) {
-        std::cerr << "Failed to load image: " << path << ". Error: " << IMG_GetError() << std::endl;
-        return nullptr;
-    }
-    
-    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
-    SDL_FreeSurface(surface);
-    
-    if (!texture) {
-        std::cerr << "Failed to create texture from " << path << ". Error: " << SDL_GetError() << std::endl;
-    }
-    
-    return texture;
-}
-
 void Client::render() {
-    std::cout << "Rendering, gameState=" << (int)gameState << std::endl;
-    std::lock_guard<std::mutex> lock(gameMutex);
+    window.clear(sf::Color::Black);
     
-    // Fond noir
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
-
-if (gameState == WAITING) {
-    std::cout << "Affichage de l'écran d'attente" << std::endl;
-
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); // fond noir
-    SDL_RenderClear(renderer);
-
-    // Rectangle blanc au centre
-    SDL_Rect msgRect = {windowWidth / 4, windowHeight / 2 - 40, windowWidth / 2, 80};
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-    SDL_RenderFillRect(renderer, &msgRect);
-
-    // Pour afficher du texte, tu pourras intégrer SDL_ttf plus tard
-    // En attendant, juste une indication console
-    std::cout << "[INFO] En attente de joueurs (" << waitingPlayers << "/2)" << std::endl;
-
-    SDL_RenderPresent(renderer);
-    return;
-}
-
-    
-    // Si le jeu est en cours
-    // Fond
-    if (textures["background"]) {
-        SDL_Rect bgRect = {0, 0, windowWidth, windowHeight};
-        SDL_RenderCopy(renderer, textures["background"], NULL, &bgRect);
+    if (gameState == WAITING) {
+        sf::Text text;
+        text.setFont(font);
+        text.setString("En attente de joueurs (" + std::to_string(waitingPlayers) + "/2)");
+        text.setCharacterSize(24);
+        text.setFillColor(sf::Color::White);
+        text.setPosition(windowWidth/2 - text.getLocalBounds().width/2, windowHeight/2 - 12);
+        
+        window.draw(text);
+        window.display();
+        return;
     }
+    
+    // Fond
+    sprites["background"].setPosition(0, 0);
+    sprites["background"].setScale(
+        float(windowWidth) / textures["background"].getSize().x,
+        float(windowHeight) / textures["background"].getSize().y
+    );
+    window.draw(sprites["background"]);
     
     // Calcul du viewport
     int mapWidth = gameMap.getWidth();
@@ -430,7 +308,7 @@ if (gameState == WAITING) {
             offsetX = mapWidth - windowWidth / scaleX;
     }
     
-    // Rendu des éléments
+    // Rendu des éléments de la carte
     int visibleStartX = static_cast<int>(offsetX);
     int visibleEndX = static_cast<int>(offsetX + windowWidth / scaleX);
     
@@ -447,15 +325,11 @@ if (gameState == WAITING) {
             int cellWidth = static_cast<int>(scaleX);
             int cellHeight = static_cast<int>(scaleY);
             
-            // Show placeholder for cells
             if (cell == COIN) {
-                SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255); // Yellow for coins
-                SDL_Rect coinRect = {screenX, screenY, cellWidth, cellHeight};
-                SDL_RenderFillRect(renderer, &coinRect);
-            } else if (cell == ELECTRIC) {
-                SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255); // Red for electric
-                SDL_Rect elecRect = {screenX, screenY, cellWidth, cellHeight};
-                SDL_RenderFillRect(renderer, &elecRect);
+                renderCoin(screenX, screenY, cellWidth, cellHeight);
+            } 
+            else if (cell == ELECTRIC) {
+                renderZapper(screenX, screenY, cellWidth, cellHeight * 2);
             }
         }
     }
@@ -468,15 +342,36 @@ if (gameState == WAITING) {
             int playerWidth = static_cast<int>(PLAYER_WIDTH * scaleX);
             int playerHeight = static_cast<int>(PLAYER_HEIGHT * scaleY);
             
-            // Placeholder for player
-            SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
-            SDL_Rect playerRect = {screenX, screenY, playerWidth, playerHeight};
-            SDL_RenderFillRect(renderer, &playerRect);
+            renderPlayer(screenX, screenY, playerWidth, playerHeight, player.jetpackOn);
         }
     }
     
-    // Mise à jour de l'écran
-    SDL_RenderPresent(renderer);
+    // Scores
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+        sf::Text scoreText;
+        scoreText.setFont(font);
+        scoreText.setString("Player " + std::to_string(i+1) + ": " + std::to_string(players[i].score));
+        scoreText.setCharacterSize(18);
+        scoreText.setFillColor(players[i].alive ? sf::Color::White : sf::Color(128, 128, 128));
+        scoreText.setPosition(10, 10 + i * 30);
+        window.draw(scoreText);
+    }
+    
+    // Message de fin
+    if (gameState == OVER) {
+        sf::Text endText;
+        endText.setFont(font);
+        endText.setString("Fin de partie!");
+        endText.setCharacterSize(36);
+        endText.setFillColor(sf::Color::White);
+        endText.setPosition(
+            windowWidth/2 - endText.getLocalBounds().width/2, 
+            windowHeight/2 - 18
+        );
+        window.draw(endText);
+    }
+    
+    window.display();
 }
 
 void Client::networkLoop() {
@@ -493,73 +388,4 @@ void Client::networkLoop() {
     
     running = false;
     debugPrint("Thread réseau terminé");
-}
-
-void Client::cleanupSDL()
-{
-   for (auto& pair : textures) {
-       if (pair.second) {
-           SDL_DestroyTexture(pair.second);
-           pair.second = nullptr;
-       }
-   }
-   
-   if (renderer) {
-       SDL_DestroyRenderer(renderer);
-       renderer = nullptr;
-   }
-   
-   if (window) {
-       SDL_DestroyWindow(window);
-       window = nullptr;
-   }
-   IMG_Quit();
-   SDL_Quit();
-}
-
-void Client::renderPlayer(int x, int y, int width, int height, bool jetpackOn) {
-    int frameWidth = 32;
-    int frameHeight = 32;
-    
-    int row = jetpackOn ? 0 : 3; 
-    
-    SDL_Rect srcRect = {
-        frameCountPlayer * frameWidth,
-        row * frameHeight,
-        frameWidth,
-        frameHeight
-    };
-    
-    SDL_Rect destRect = {x, y, width, height};
-    SDL_RenderCopy(renderer, textures["player"], &srcRect, &destRect);
-}
-
-void Client::renderCoin(int x, int y, int width, int height) {
-    int frameWidth = 16;
-    int frameHeight = 16;
-    
-    SDL_Rect srcRect = {
-        frameCountCoin * frameWidth,
-        0,
-        frameWidth,
-        frameHeight
-    };
-    
-    SDL_Rect destRect = {x, y, width, height};
-    SDL_RenderCopy(renderer, textures["coin"], &srcRect, &destRect);
-}
-
-void Client::renderZapper(int x, int y, int width, int height) {
-    int frameWidth = 16;
-    int frameHeight = 32;
-    
-    SDL_Rect srcRect = {
-        frameCountZapper * frameWidth,
-        0,
-        frameWidth,
-        frameHeight
-    };
-    
-    SDL_Rect destRect = {x, y, width, height};
-    SDL_RenderCopy(renderer, textures["electric"], &srcRect, &destRect);
 }
