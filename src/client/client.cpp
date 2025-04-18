@@ -58,31 +58,30 @@ bool Client::start() {
         std::cerr << "Non connecté au serveur" << std::endl;
         return false;
     }
-
-    initWindow(); // OK dans le thread principal
+    
+    // Initialisation de la fenêtre et chargement des assets
+    initWindow();
     if (!loadAssets()) {
         std::cerr << "Erreur lors du chargement des assets" << std::endl;
         return false;
     }
-
+    
     running = true;
-
+    
     try {
-        // Le réseau part dans un thread, mais pas la boucle graphique
         networkThread = std::thread(&Client::networkLoop, this);
-
-        // Exécute directement dans le thread principal
-        graphicsLoop(); 
+        // Exécuter la boucle graphique dans le thread principal
+        graphicsLoop();
     } catch (const std::exception& e) {
-        std::cerr << "Erreur lors du démarrage des threads: " << e.what() << std::endl;
+        std::cerr << "Erreur: " << e.what() << std::endl;
         running = false;
         return false;
     }
-
+    
     return true;
 }
 
-
+// Modifiez également stop() pour ne pas essayer de joindre graphicsThread
 void Client::stop() {
     running = false;
     
@@ -90,9 +89,7 @@ void Client::stop() {
         networkThread.join();
     }
     
-    if (graphicsThread.joinable()) {
-        graphicsThread.join();
-    }
+    // Ne pas essayer de joindre graphicsThread car il n'est pas utilisé
     
     if (clientSocket >= 0) {
         close(clientSocket);
@@ -102,7 +99,6 @@ void Client::stop() {
     // Arrêter la musique
     backgroundMusic.stop();
     
-    // Fermer la fenêtre
     if (window.isOpen()) {
         window.close();
     }
@@ -167,14 +163,18 @@ bool Client::loadAssets() {
     zapperSound.setBuffer(soundBuffers["zapper_hit"]);
     
     // Chargement de la musique de fond
+    static bool musicStarted = false;
     if (!backgroundMusic.openFromFile("assets/theme.ogg")) {
         std::cerr << "Erreur lors du chargement de la musique de fond" << std::endl;
         return false;
     }
     
-    backgroundMusic.setLoop(true);
-    backgroundMusic.setVolume(50);
-    backgroundMusic.play();
+    if (!musicStarted) {
+        backgroundMusic.setLoop(true);
+        backgroundMusic.setVolume(50);
+        backgroundMusic.play();
+        musicStarted = true;
+    }
     
     return true;
 }

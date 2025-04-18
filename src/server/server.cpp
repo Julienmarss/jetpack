@@ -90,6 +90,10 @@ bool Server::acceptClient() {
         return false;
     }
     
+    // Convertir l'adresse IP en chaîne pour la journalisation
+    char clientIP[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(clientAddr.sin_addr), clientIP, INET_ADDRSTRLEN);
+    
     int clientIndex = -1;
     for (int i = 0; i < MAX_PLAYERS; i++) {
         if (clientSockets[i] < 0) {
@@ -103,9 +107,23 @@ bool Server::acceptClient() {
         close(clientSocket);
         return false;
     }
+    
+    debugPrint("Client accepté avec index " + std::to_string(clientIndex) + 
+              ", IP: " + std::string(clientIP) + ", socket: " + std::to_string(clientSocket));
+    
     players[clientIndex].id = clientIndex;
     players[clientIndex].score = 0;
     players[clientIndex].alive = true;
+    
+    // Informer tous les clients du nouveau statut
+    int connectedClients = getConnectedClientCount();
+    debugPrint("Total clients connectés: " + std::to_string(connectedClients));
+    
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+        if (clientSockets[i] >= 0) {
+            Protocol::sendWaitingStatus(clientSockets[i], connectedClients);
+        }
+    }
     
     return true;
 }
@@ -205,51 +223,41 @@ void Server::handleConnections() {
         
         if (fds[0].revents & POLLIN) {
             if (acceptClient()) {
-                connectedClients = getConnectedClientCount(); // Mise à jour après acceptation
-                
+                int connectedClients = getConnectedClientCount(); // ← ici, après acceptation
+                debugPrint("Total clients connectés: " + std::to_string(connectedClients));
                 std::cout << "Client connecté, " << connectedClients << "/" << MAX_PLAYERS << " joueurs" << std::endl;
-                
+        
+                // ← tu peux ici re-broadcast le waiting status (pas obligatoire mais safe)
+                for (int i = 0; i < MAX_PLAYERS; i++) {
+                    if (clientSockets[i] >= 0) {
+                        Protocol::sendWaitingStatus(clientSockets[i], connectedClients);
+                    }
+                }
+        
                 if (connectedClients >= MAX_PLAYERS) {
                     std::cout << "Tous les joueurs sont connectés, démarrage de la partie" << std::endl;
-                    
+        
                     const std::vector<Vector2>& startPositions = gameMap.getStartPositions();
                     for (size_t i = 0; i < MAX_PLAYERS && i < startPositions.size(); i++) {
                         players[i].position = startPositions[i];
                     }
-                    
+        
                     for (int i = 0; i < MAX_PLAYERS; i++) {
                         if (clientSockets[i] >= 0) {
-                            Protocol::sendMap(clientSockets[i], gameMap);
+                            Protocol::sendMap(clientSockets[i], gameMap); // <-- probable point de crash
                         }
                     }
-                    
+        
                     gameState = RUNNING;
-                    broadcastGameState(); // Ajout crucial: informer les clients du changement d'état
-                    
+                    broadcastGameState();
+        
                     std::thread gameThread(&Server::gameLoop, this);
                     gameThread.detach();
                 }
             }
         }
-        
-        for (size_t i = 1; i < fds.size(); i++) {
-            if (fds[i].revents & POLLIN) {
-                int clientIndex = -1;
-                
-                for (int j = 0; j < MAX_PLAYERS; j++) {
-                    if (clientSockets[j] == fds[i].fd) {
-                        clientIndex = j;
-                        break;
-                    }
-                }
-                
-                if (clientIndex >= 0) {
-                    handleClientMessage(clientIndex);
-                }
-            }
-        }
     }
-}
+}        
 
 void Server::gameLoop() {
     const int TICKS_PER_SECOND = 60;

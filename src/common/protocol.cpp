@@ -23,7 +23,8 @@ bool Protocol::sendPacket(int socket, int packetType, const void* data, int data
 
 int Protocol::receivePacket(int socket, int& packetType, void* buffer, int bufferSize) {
     PacketHeader header;
-    int received = recv(socket, &header, sizeof(header), 0);
+    int received = recv(socket, &header, sizeof(header), MSG_WAITALL);
+    debugPrint("recv header: " + std::to_string(received) + " bytes, errno: " + std::to_string(errno));
 
     if (received <= 0) {
         if (received == 0) {
@@ -65,8 +66,15 @@ bool Protocol::sendMap(int socket, const Map& map)
 {
     std::string mapString = map.toString();
     debugPrint("Envoi de la carte: " + std::to_string(mapString.length()) + " octets");
+
+    if (socket < 0) {
+        debugPrint("Socket invalide dans sendMap");
+        return false;
+    }
+
     return sendPacket(socket, MAP_DATA, mapString.c_str(), mapString.length());
 }
+
 
 
 bool Protocol::receiveMap(int socket, Map& map)
