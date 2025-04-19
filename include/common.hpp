@@ -33,9 +33,11 @@
 #define PLAYER_HEIGHT 32
 #define COIN_SIZE 16
 #define ELECTRIC_SIZE 16
-#define GRAVITY 0.5f
-#define JETPACK_FORCE 0.8f
-#define HORIZONTAL_SPEED 5.0f
+#define GRAVITY 0.3f
+#define JETPACK_FORCE 0.6f
+#define HORIZONTAL_SPEED 4.0f
+#define MAX_UP_SPEED -5.0f
+#define MAX_DOWN_SPEED 5.0f
 
 enum CellType {
     EMPTY = 0,
