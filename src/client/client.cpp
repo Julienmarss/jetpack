@@ -176,39 +176,40 @@ void Client::graphicsLoop() {
 
     sf::Clock frameClock;
     float previousTime = frameClock.getElapsedTime().asSeconds();
+    float accumulatedTime = 0.0f;
+    const float fixedTimeStep = 1.0f / 60.0f;
 
     while (running && window.isOpen()) {
         handleInput();
 
         float currentTime = frameClock.getElapsedTime().asSeconds();
         float deltaTime = currentTime - previousTime;
-
-        if (deltaTime < 0.005f || std::isnan(deltaTime)) deltaTime = 0.016f;
-        if (deltaTime > 0.05f) deltaTime = 0.016f; // Corrigé le point-virgule manquant
-
         previousTime = currentTime;
 
-        debugPrint("[GRAPHICS] deltaTime: " + std::to_string(deltaTime));
+        if (deltaTime > 0.25f) 
+            deltaTime = 0.25f;
+        if (deltaTime < 0.001f) 
+            deltaTime = 0.016f;
 
-        // Mettre à jour la caméra pour suivre le joueur
-        updateCamera(deltaTime);
-        
-        // Le serveur gère toute la physique, pas besoin de simulateLocalPlayer
-        
-        render();
+        accumulatedTime += deltaTime;
+
+        while (accumulatedTime >= fixedTimeStep) {
+            updateCamera(fixedTimeStep);
+            accumulatedTime -= fixedTimeStep;
+        }
 
         if (animationClock.getElapsedTime().asSeconds() > 0.1f) {
             animationClock.restart();
             currentPlayerFrame = (currentPlayerFrame + 1) % 4;
             currentCoinFrame = (currentCoinFrame + 1) % 6;
             currentZapperFrame = (currentZapperFrame + 1) % 4;
-
-            debugPrint("[ANIMATION] Frame joueur: " + std::to_string(currentPlayerFrame) +
-                       ", coin: " + std::to_string(currentCoinFrame) +
-                       ", zapper: " + std::to_string(currentZapperFrame));
         }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        render();
+        sf::Time frameTime = frameClock.getElapsedTime() - sf::seconds(previousTime);
+        sf::Time sleepTime = sf::seconds(1.0f/60.0f) - frameTime;
+        if (sleepTime > sf::Time::Zero) {
+            sf::sleep(sleepTime);
+        }
     }
 
     debugPrint("Thread graphique terminé");
@@ -224,76 +225,50 @@ void Client::simulateLocalPlayer(float deltaTime) {
     std::lock_guard<std::mutex> lock(gameMutex);
     Player& me = players[myPlayerId];
     
-    if (!me.alive) return;
+    if (!me.alive) 
+        return;
 
-    // Notifier le serveur que le jetpack est activé/désactivé
-    // Le serveur appliquera la physique complète
     sendPlayerPosition(jetpackActive);
     
-    // Application locale simplifiée de la physique pour réduire l'impression de latence
-    // mais sans contredire le serveur
     if (jetpackActive) {
-        // Simuler une montée douce pour un feedback immédiat
-        float estimatedVelocity = -10.0f; // Valeur arbitraire pour effet visuel
+        float estimatedVelocity = -10.0f;
         float estimatedNewY = me.position.y + estimatedVelocity * deltaTime;
         
-        // Ne pas monter au-dessus du plafond
         if (estimatedNewY < 0) {
             estimatedNewY = 0;
         }
-        
-        // Application locale limitée (sera écrasée par le serveur à la prochaine mise à jour)
         me.velocityY = estimatedVelocity;
         me.position.y = estimatedNewY;
-        
-        debugPrint("Simulation locale: jetpack ON, vY=" + std::to_string(me.velocityY));
     } else {
-        // Simuler une descente douce pour un feedback immédiat
-        float estimatedVelocity = 10.0f; // Valeur arbitraire pour effet visuel
+        float estimatedVelocity = 10.0f;
         float estimatedNewY = me.position.y + estimatedVelocity * deltaTime;
-        
-        // Ne pas descendre en-dessous du sol
         const float CELL_SIZE = 32.0f;
         float floorY = (gameMap.getHeight() - 2) * CELL_SIZE - PLAYER_HEIGHT;
         if (estimatedNewY > floorY) {
-            estimatedNewY = floorY;
             estimatedVelocity = 0.0f;
         }
-        
-        // Application locale limitée (sera écrasée par le serveur à la prochaine mise à jour)
         me.velocityY = estimatedVelocity;
         me.position.y = estimatedNewY;
-        
-        debugPrint("Simulation locale: jetpack OFF, vY=" + std::to_string(me.velocityY));
     }
 }
 
 
 void Client::updateCamera(float deltaTime) {
     if (gameState == RUNNING && myPlayerId >= 0 && myPlayerId < MAX_PLAYERS) {
-        // Obtenir la position horizontale du joueur
         float playerX = players[myPlayerId].position.x;
-        
-        // Garder le joueur à environ 30% de la largeur de l'écran à gauche
         float targetCameraX = playerX - windowWidth * 0.3f;
-        
-        // Lisser le mouvement de la caméra
         float cameraSpeed = 5.0f;
+        const float CELL_SIZE = 32.0f;
+        float maxCameraX = gameMap.getWidth() * CELL_SIZE - windowWidth;
         cameraX += (targetCameraX - cameraX) * cameraSpeed * deltaTime;
-        
-        // Limites de la caméra
+
         if (cameraX < 0) {
             cameraX = 0;
         }
-        
-        const float CELL_SIZE = 32.0f;
-        float maxCameraX = gameMap.getWidth() * CELL_SIZE - windowWidth;
+
         if (maxCameraX > 0 && cameraX > maxCameraX) {
             cameraX = maxCameraX;
         }
-        
-        debugPrint("[CAMERA] Position: " + std::to_string(cameraX) + 
-                   ", Joueur: " + std::to_string(playerX));
     }
 }
 
@@ -306,39 +281,20 @@ void Client::sendPlayerPosition(bool jetpackOn) {
         return;
     }
     
-    // Données à envoyer sans structure
     int player_id = myPlayerId;
     float x = players[myPlayerId].position.x;
     float y = players[myPlayerId].position.y;
-    int jetpack_on = jetpackOn ? 1 : 0;  // Utiliser la vraie valeur, pas toujours 1
-    
-    // Construction du buffer manuellement
-    char buffer[16]; // 4 + 4 + 4 + 4 bytes
+    int jetpack_on = jetpackOn ? 1 : 0;
+    char buffer[16];
     int offset = 0;
-    
-    // Ajouter l'ID du joueur
     std::memcpy(buffer + offset, &player_id, sizeof(int));
     offset += sizeof(int);
-    
-    // Ajouter la position X
     std::memcpy(buffer + offset, &x, sizeof(float));
     offset += sizeof(float);
-    
-    // Ajouter la position Y
     std::memcpy(buffer + offset, &y, sizeof(float));
     offset += sizeof(float);
-    
-    // Ajouter l'état du jetpack
     std::memcpy(buffer + offset, &jetpack_on, sizeof(int));
-    
-    // Envoyer le paquet
     Protocol::sendPacket(clientSocket, PLAYER_POS, buffer, 16);
-    
-    debugPrint("[CLIENT] Envoi PLAYER_POS: id=" + std::to_string(player_id) + 
-              ", pos=(" + std::to_string(x) + "," + std::to_string(y) + ")" +
-              ", jetpack=" + std::to_string(jetpack_on));
-    debugPrint("[TEST] FORCE JETPACK ACTIVÉ POUR TEST - Envoi: id=" + 
-                std::to_string(player_id) + ", jetpack=" + std::to_string(jetpack_on));
 }
 
 void Client::handleServerMessage() {
@@ -372,8 +328,6 @@ void Client::handleServerMessage() {
         running = false;
         return;
     }
-
-    debugPrint("Paquet reçu: type=" + std::to_string(packetType) + ", taille=" + std::to_string(dataSize));
 
     switch (packetType) {
         case ASSIGN_PLAYER_ID: {
@@ -423,18 +377,16 @@ void Client::handleServerMessage() {
         
             std::lock_guard<std::mutex> lock(gameMutex);
             gameState = static_cast<GameState>(game_state);
-        
+            
             for (int i = 0; i < MAX_PLAYERS; i++) {
                 int id = playerData[i].player_id;
                 if (id >= 0 && id < MAX_PLAYERS) {
                     players[id].id = id;
-                    
-                    // Mettre à jour les états, positions, etc.
-                    players[id].position = {playerData[i].x, playerData[i].y};
+                    players[id].position.x = playerData[i].x;
+                    players[id].position.y = playerData[i].y;
                     players[id].score = playerData[i].score;
                     players[id].alive = playerData[i].alive != 0;
                     
-                    // Pour les autres joueurs, prendre en compte l'état de leur jetpack
                     if (id != myPlayerId) {
                         players[id].jetpackOn = playerData[i].jetpackOn != 0;
                     }
@@ -458,11 +410,8 @@ void Client::handleServerMessage() {
                 int winner_id;
                 int scores[MAX_PLAYERS];
             } data;
-
             std::memcpy(&data, buffer, sizeof(data));
-
             std::lock_guard<std::mutex> lock(gameMutex);
-
             gameState = OVER;
 
             std::string message = "Fin de partie! ";
@@ -472,7 +421,6 @@ void Client::handleServerMessage() {
             } else {
                 message += "Pas de gagnant.";
             }
-
             std::cout << message << std::endl;
             break;
         }
@@ -485,8 +433,6 @@ void Client::handleServerMessage() {
 
             int connectedCount;
             std::memcpy(&connectedCount, buffer, sizeof(int));
-            debugPrint("En attente de joueurs: " + std::to_string(connectedCount) + "/2");
-
             std::lock_guard<std::mutex> lock(gameMutex);
             waitingPlayers = connectedCount;
             gameState = WAITING;
@@ -494,7 +440,6 @@ void Client::handleServerMessage() {
         }
 
         default:
-            debugPrint("Type de paquet non géré: " + std::to_string(packetType));
             break;
     }
 }
@@ -571,8 +516,7 @@ void Client::render() {
     }
 
     const float CELL_SIZE = 32.0f;
-    // Ajuster cette valeur pour positionner la carte plus haut ou plus bas
-    const float MAP_OFFSET_Y = windowHeight - (gameMap.getHeight() * CELL_SIZE) - 50.0f;
+    const float MAP_OFFSET_Y = 0.0f;
     
     sf::View gameView(sf::FloatRect(cameraX, 0, windowWidth, windowHeight));
     window.setView(gameView);
@@ -604,15 +548,10 @@ void Client::render() {
     
     for (int i = 0; i < MAX_PLAYERS; i++) {
         if (players[i].alive) {
-            // Calculer la position à l'écran pour le rendu
             float screenX = players[i].position.x;
-            // Position verticale ajustée avec l'offset
             float screenY = players[i].position.y + MAP_OFFSET_Y;
-            
-            // Utiliser l'état du jetpack local pour notre joueur
             bool isJetpackActive = (i == myPlayerId) ? jetpackActive : players[i].jetpackOn;
             renderPlayer(screenX, screenY, 0, 0, isJetpackActive);
-
             debugPrint("Rendu du joueur " + std::to_string(i) + " à la position (" +
                        std::to_string(screenX) + "," + std::to_string(screenY) + ") jetpack: " +
                        std::to_string(isJetpackActive));
@@ -646,54 +585,42 @@ void Client::render() {
 
 void Client::handleInput() {
     sf::Event event;
-    while (window.pollEvent(event)) {
+    while (running && window.isOpen() && window.pollEvent(event)) {
         if (event.type == sf::Event::Closed) {
             window.close();
             running = false;
+            return;
         }
         else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Space) {
             if (!jetpackActive && gameState == RUNNING) {
                 jetpackActive = true;
-                
-                // Sons pour le feedback immédiat
                 sf::Sound startSound;
                 startSound.setBuffer(soundBuffers["jetpack_start"]);
                 startSound.play();
                 jetpackSound.play();
-                
-                // Envoyer immédiatement l'état au serveur
                 sendPlayerPosition(true);
-                
                 debugPrint("Jetpack activé par l'utilisateur");
             }
         }
         else if (event.type == sf::Event::KeyReleased && event.key.code == sf::Keyboard::Space) {
-            if (jetpackActive) {
+            if (jetpackActive && gameState == RUNNING) {
                 jetpackActive = false;
-                
-                // Sons pour le feedback immédiat
                 jetpackSound.stop();
                 sf::Sound stopSound;
                 stopSound.setBuffer(soundBuffers["jetpack_stop"]);
                 stopSound.play();
-                
-                // Envoyer immédiatement l'état au serveur
                 sendPlayerPosition(false);
-                
                 debugPrint("Jetpack désactivé par l'utilisateur");
             }
         }
     }
     
-    // Vérification continue de la touche espace pour plus de réactivité
-    if (gameState == RUNNING && myPlayerId >= 0 && players[myPlayerId].alive) {
+    if (running && window.isOpen() && gameState == RUNNING && myPlayerId >= 0 && players[myPlayerId].alive) {
         bool spacePressed = sf::Keyboard::isKeyPressed(sf::Keyboard::Space);
         
-        // Si l'état a changé entre deux événements
         if (spacePressed != jetpackActive) {
             jetpackActive = spacePressed;
             
-            // Mise à jour des sons
             if (jetpackActive) {
                 if (jetpackSound.getStatus() != sf::Sound::Playing) {
                     sf::Sound startSound;
@@ -709,11 +636,8 @@ void Client::handleInput() {
                     stopSound.play();
                 }
             }
-            
-            // Envoi immédiat au serveur
             sendPlayerPosition(jetpackActive);
-            
-            debugPrint("État du jetpack mis à jour en continu: " + std::to_string(jetpackActive));
+            debugPrint("État du jetpack mis à jour: " + std::to_string(jetpackActive));
         }
     }
 }

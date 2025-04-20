@@ -1,6 +1,7 @@
 #include "protocol.hpp"
 
-bool Protocol::sendPacket(int socket, int packetType, const void* data, int dataLength) {
+bool Protocol::sendPacket(int socket, int packetType, const void* data, int dataLength)
+{
     PacketHeader header;
     header.type = packetType;
     header.length = dataLength;
@@ -15,16 +16,15 @@ bool Protocol::sendPacket(int socket, int packetType, const void* data, int data
             return false;
         }
     }
-    
-    debugPrint("Paquet envoyé: type=" + std::to_string(packetType) + 
-              ", taille=" + std::to_string(dataLength));
     return true;
 }
 
-int Protocol::receivePacket(int socket, int& packetType, void* buffer, int bufferSize) {
+int Protocol::receivePacket(int socket, int& packetType, void* buffer, int bufferSize)
+{
     PacketHeader header;
     int received = recv(socket, &header, sizeof(header), MSG_WAITALL);
-    debugPrint("recv header: " + std::to_string(received) + " bytes, errno: " + std::to_string(errno));
+    packetType = header.type;
+    int dataLength = header.length;
 
     if (received <= 0) {
         if (received == 0) {
@@ -35,12 +35,6 @@ int Protocol::receivePacket(int socket, int& packetType, void* buffer, int buffe
         return received;
     }
 
-    packetType = header.type;
-    int dataLength = header.length;
-
-    debugPrint("En-tête de paquet reçu: type=" + std::to_string(packetType) + 
-               ", taille=" + std::to_string(dataLength));
-
     if (dataLength > bufferSize) {
         debugPrint("Données de paquet trop grandes pour le buffer");
         return -1;
@@ -48,17 +42,6 @@ int Protocol::receivePacket(int socket, int& packetType, void* buffer, int buffe
 
     if (dataLength > 0) {
         received = recv(socket, buffer, dataLength, 0);
-        if (received > 0) {
-            std::string hexDump = "Données reçues: ";
-            for (int i = 0; i < std::min(received, 16); i++) {
-                char byte = ((char*)buffer)[i];
-                char hex[3];
-                snprintf(hex, sizeof(hex), "%02X", (unsigned char)byte);
-                hexDump += hex;
-                hexDump += " ";
-            }
-            debugPrint(hexDump);
-        }
         
         if (received <= 0) {
             debugPrint("Erreur lors de la réception des données du paquet : " + std::string(strerror(errno)));
@@ -88,7 +71,6 @@ bool Protocol::sendMap(int socket, const Map& map)
 }
 
 
-
 bool Protocol::receiveMap(int socket, Map& map)
 {
     char buffer[MAX_BUFFER_SIZE];
@@ -106,7 +88,8 @@ bool Protocol::receiveMap(int socket, Map& map)
     return map.fromString(std::string(buffer, dataSize));
 }
 
-bool Protocol::sendPlayerPosition(int socket, int playerId, const Vector2& position, bool jetpackOn) {
+bool Protocol::sendPlayerPosition(int socket, int playerId, const Vector2& position, bool jetpackOn)
+{
     struct {
         int player_id;
         float x;
@@ -135,7 +118,7 @@ bool Protocol::sendGameState(int socket, GameState state, const std::array<Playe
             float y;
             int score;
             int alive;
-            int jetpackOn; // ✅ Ajout du champ
+            int jetpackOn;
         } players[MAX_PLAYERS];
     } data;
 
@@ -147,19 +130,14 @@ bool Protocol::sendGameState(int socket, GameState state, const std::array<Playe
         data.players[i].y = players[i].position.y;
         data.players[i].score = players[i].score;
         data.players[i].alive = players[i].alive ? 1 : 0;
-        data.players[i].jetpackOn = players[i].jetpackOn ? 1 : 0; // ✅ Important
-
-        debugPrint("[PROTOCOLE] Envoi état jetpack joueur " + std::to_string(i) + 
-        ": " + std::to_string(data.players[i].jetpackOn) + 
-        " (original: " + std::to_string(players[i].jetpackOn) + ")");
-
+        data.players[i].jetpackOn = players[i].jetpackOn ? 1 : 0;
     }
-    return sendPacket(socket, GAME_STATE, &data, sizeof(data));
+    bool result = sendPacket(socket, GAME_STATE, &data, sizeof(data));
+    return result;
 }
 
 bool Protocol::sendGameOver(int socket, int winnerId, const std::array<int, MAX_PLAYERS>& scores)
 {
-    //Foutre la struct dans une class dans un .hpp (URGENT)
     struct {
         int winner_id;
         int scores[MAX_PLAYERS];
@@ -179,7 +157,8 @@ bool Protocol::sendWaitingStatus(int socket, int connectedPlayers)
     return sendPacket(socket, WAITING_STATUS, &connectedPlayers, sizeof(int));
 }
 
-inline bool sendInt(int socket, int type, int value) {
+inline bool sendInt(int socket, int type, int value)
+{
     char payload[sizeof(int)];
     std::memcpy(payload, &value, sizeof(int));
     return Protocol::sendPacket(socket, type, payload, sizeof(int));

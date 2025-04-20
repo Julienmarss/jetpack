@@ -22,6 +22,7 @@ public:
     bool fromString(const std::string& mapString);
     int getWidth() const { return width; }
     int getHeight() const { return height; }
+    void setCell(int x, int y, CellType cellType);
     const std::vector<Vector2>& getStartPositions() const { return startPositions; }
 
 private:

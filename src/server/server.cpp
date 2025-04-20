@@ -58,7 +58,6 @@ bool Server::start() {
     std::cout << "En attente de " << MAX_PLAYERS << " joueurs..." << std::endl;
     running = true;
     handleConnections();
-    
     return true;
 }
 
@@ -140,46 +139,33 @@ void Server::handleClientMessage(int clientIndex) {
         players[clientIndex].alive = false;
         
         if (gameState == RUNNING) {
-            // Vérifier s'il ne reste qu'un joueur
             checkGameEndCondition();
         }
-        
         return;
     }
     
     switch (packetType) {
         case PLAYER_POS: {
-            if (dataSize < 16) { // player_id(4) + x(4) + y(4) + jetpack_on(4)
+            if (dataSize < 16) {
                 debugPrint("Paquet PLAYER_POS invalide: taille=" + std::to_string(dataSize));
                 return;
             }
-            
-            // Extraire les données sans structure
             int player_id;
             float x, y;
             int jetpack_on;
-            
-            // Lire les données séquentiellement depuis le buffer
             int offset = 0;
             
             std::memcpy(&player_id, buffer + offset, sizeof(int));
             offset += sizeof(int);
-            
             std::memcpy(&x, buffer + offset, sizeof(float));
             offset += sizeof(float);
-            
             std::memcpy(&y, buffer + offset, sizeof(float));
             offset += sizeof(float);
-            
             std::memcpy(&jetpack_on, buffer + offset, sizeof(int));
             
             if (player_id == clientIndex) {
                 bool oldState = players[clientIndex].jetpackOn;
                 players[clientIndex].jetpackOn = (jetpack_on != 0);
-                
-                debugPrint("[DEBUG CRITIQUE] JETPACK: Client " + std::to_string(clientIndex) + 
-                         " état changé: " + std::to_string(oldState) + " -> " + 
-                         std::to_string(players[clientIndex].jetpackOn));
             } else {
                 debugPrint("ID de joueur incorrect dans PLAYER_POS");
             }
@@ -242,10 +228,6 @@ void Server::handleConnections() {
                         players[i].position.y = startPositions[i].y * CELL_SIZE;
                         players[i].velocityY = 0.0f;
                         players[i].jetpackOn = false;
-                    
-                        debugPrint("Position de départ (pix) du joueur " + std::to_string(i) + ": (" +
-                                   std::to_string(players[i].position.x) + ", " +
-                                   std::to_string(players[i].position.y) + ")");
                     }
 
                     for (int i = 0; i < MAX_PLAYERS; i++) {
@@ -253,10 +235,8 @@ void Server::handleConnections() {
                             Protocol::sendMap(clientSockets[i], gameMap);
                         }
                     }
-
                     gameState = RUNNING;
                     broadcastGameState();
-
                     std::thread gameThread(&Server::gameLoop, this);
                     gameThread.detach();
                 }
@@ -269,10 +249,6 @@ void Server::gameLoop() {
     const int TICKS_PER_SECOND = 60;
     const std::chrono::milliseconds TICK_DURATION(1000 / TICKS_PER_SECOND);
     const float GRACE_PERIOD = 2.0f;
-    
-    debugPrint("Démarrage de la boucle de jeu");
-    debugPrint("C'est parti!");
-    
     gameStartTime = std::chrono::steady_clock::now();
     bool gracePeriod = true;
     
@@ -292,7 +268,8 @@ void Server::gameLoop() {
             for (int i = 0; i < MAX_PLAYERS; i++) {
                 if (!players[i].alive) {
                     players[i].alive = true;
-                    debugPrint("Joueur " + std::to_string(i) + " ressuscité pendant la période de grâce");
+                    debugPrint("[RESURRECTION] Joueur " + std::to_string(i) + 
+                              " ressuscité pendant la période de grâce");
                 }
             }
         }
@@ -303,85 +280,69 @@ void Server::gameLoop() {
             std::this_thread::sleep_for(TICK_DURATION - elapsedTime);
         }
     }
-    debugPrint("Boucle de jeu terminée");
 }
 
 void Server::updateGameState() {
-    auto currentTime = std::chrono::steady_clock::now();
-    bool gracePeriodActive = std::chrono::duration_cast<std::chrono::seconds>(
-        currentTime - gameStartTime).count() < GRACE_PERIOD_SECONDS;
-    
     const float CELL_SIZE = 32.0f;
-    float mapHeight = gameMap.getHeight() * CELL_SIZE;
-    float floorY = mapHeight - PLAYER_HEIGHT - CELL_SIZE; // Le sol est à CELL_SIZE du bas
-    
-    // Constantes de physique amplifiées pour un meilleur contrôle
-    const float JET_POWER = JETPACK_FORCE * 100.0f; // Force énorme
-    const float GRAV_POWER = GRAVITY * 10.0f; // Gravité forte
-    const float MAX_UP = MAX_UP_SPEED * 10.0f; // Vitesse ascendante max augmentée
-    const float MAX_DOWN = MAX_DOWN_SPEED * 2.0f; // Vitesse descendante max augmentée
+    const float FLOOR_Y = 486.0f;
+    const float JET_ACCEL = -1.5f;
+    const float GRAV_ACCEL = 0.5f;
+    const float HORIZ_SPEED = 4.0f;
+    const float MAX_FALL = 10.0f;
+    const float MAX_RISE = -10.0f;
+    const float DAMP_FACTOR = 0.97f;
     
     for (int i = 0; i < MAX_PLAYERS; i++) {
-        if (!players[i].alive) continue;
+        if (!players[i].alive) 
+            continue;
+
+        float oldY = players[i].position.y;
+        float oldVelocityY = players[i].velocityY;
         
-        // Appliquer la physique verticale en fonction de l'état du jetpack
-        debugPrint("Joueur " + std::to_string(i) + " jetpack=" +
-                  std::to_string(players[i].jetpackOn) + " avant déplacement");
-                  
         if (players[i].jetpackOn) {
-            // Force très importante pour le jetpack (une seule fois)
-            float oldVelocity = players[i].velocityY;
-            players[i].velocityY -= JET_POWER;
-            
-            if (players[i].velocityY < MAX_UP) {
-                players[i].velocityY = MAX_UP;
-            }
-            
-            debugPrint("[PHYSIQUE] Jetpack activé: vY " + std::to_string(oldVelocity) +
-                     " -> " + std::to_string(players[i].velocityY));
-        } else {
-            // Appliquer la gravité avec une force plus importante
-            players[i].velocityY += GRAV_POWER;
-            
-            // Limiter la vitesse descendante maximale
-            if (players[i].velocityY > MAX_DOWN) {
-                players[i].velocityY = MAX_DOWN;
-            }
+            players[i].velocityY += JET_ACCEL;
+        }
+        oldVelocityY = players[i].velocityY;
+        players[i].velocityY += GRAV_ACCEL;
+        oldVelocityY = players[i].velocityY;
+        players[i].velocityY *= DAMP_FACTOR;
+        
+        if (players[i].velocityY > MAX_FALL) {
+            players[i].velocityY = MAX_FALL;
+        } else if (players[i].velocityY < MAX_RISE) {
+            players[i].velocityY = MAX_RISE;
         }
         
-        // Appliquer la vélocité à la position verticale
+        oldY = players[i].position.y;
         players[i].position.y += players[i].velocityY;
+        players[i].position.x += HORIZ_SPEED;
         
-        // Limites verticales (collision avec le sol et le plafond)
         if (players[i].position.y < 0) {
             players[i].position.y = 0;
             players[i].velocityY = 0;
-        } else if (players[i].position.y > floorY) {
-            players[i].position.y = floorY;
+        } else if (players[i].position.y > FLOOR_Y) {
+            players[i].position.y = FLOOR_Y;
             players[i].velocityY = 0;
         }
-        
-        // Avancer horizontalement à vitesse constante
-        players[i].position.x += HORIZONTAL_SPEED;
-        
-        // Collisions
-        if (!gracePeriodActive) {
-            checkCollisions(i);
-        } else {
-            checkCoinCollisions(i);
-        }
 
-        // Vérifier si le joueur a atteint la fin du niveau
+        bool wasAlive = players[i].alive;
+        checkCollisions(i);
+        if (wasAlive && !players[i].alive) {
+            debugPrint("Joueur " + std::to_string(i) + " est mort lors de checkCollisions");
+            continue;
+        }
+        
         if (players[i].position.x >= gameMap.getWidth() * CELL_SIZE - PLAYER_WIDTH) {
+            debugPrint("Joueur " + std::to_string(i) + " a atteint la fin du niveau");
             endGame(i);
             return;
         }
-        
-        debugPrint("Server update: Joueur " + std::to_string(i) +
-                 " - x=" + std::to_string(players[i].position.x) +
-                 " - y=" + std::to_string(players[i].position.y) +
-                 ", vY=" + std::to_string(players[i].velocityY) +
-                 ", jetpack=" + std::to_string(players[i].jetpackOn));
+    }
+}
+
+void Map::setCell(int x, int y, CellType cellType) {
+    if (x >= 0 && x < width && y >= 0 && y < height) {
+        data[y * width + x] = cellType;
     }
 }
 
@@ -404,32 +365,11 @@ void Server::checkCollisions(int playerIndex) {
             
             if (cell == COIN) {
                 player.score++;
-                debugPrint("Joueur " + std::to_string(playerIndex) + " a collecté une pièce, score: " + 
-                         std::to_string(player.score));
-                
+                gameMap.setCell(tileX, tileY, EMPTY);
             } 
             else if (cell == ELECTRIC) {
-                debugPrint("COLLISION: Joueur " + std::to_string(playerIndex) + 
-                          " à position (" + std::to_string(player.position.x) + "," + 
-                          std::to_string(player.position.y) + ") a touché un zapper");
-                
                 player.alive = false;
-                debugPrint("Joueur " + std::to_string(playerIndex) + " est mort");
-                
-                int aliveCount = 0;
-                int lastAlivePlayer = -1;
-                
-                for (int i = 0; i < MAX_PLAYERS; i++) {
-                    if (players[i].alive) {
-                        aliveCount++;
-                        lastAlivePlayer = i;
-                    }
-                }
-                
-                if (aliveCount <= 1) {
-                    endGame(lastAlivePlayer);
-                }
-                
+                checkGameEndCondition();
                 return;
             }
         }
@@ -453,9 +393,7 @@ void Server::checkCoinCollisions(int playerIndex) {
             
             if (gameMap.getCell(tileX, tileY) == COIN) {
                 player.score++;
-                debugPrint("Joueur " + std::to_string(playerIndex) + " a collecté une pièce, score: " + 
-                         std::to_string(player.score));
-                
+                gameMap.setCell(tileX, tileY, EMPTY);
             }
         }
     }
@@ -485,7 +423,6 @@ void Server::endGame(int winnerId) {
     }
 }
 
-// Ajoutez cette fonction dans server.cpp
 void Server::checkGameEndCondition() {
     int aliveCount = 0;
     int lastAlivePlayer = -1;
@@ -497,7 +434,6 @@ void Server::checkGameEndCondition() {
         }
     }
     
-    // Si aucun joueur n'est en vie ou s'il n'en reste qu'un
     if (aliveCount <= 1 && gameState == RUNNING) {
         endGame(lastAlivePlayer);
     }

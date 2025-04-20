@@ -29,9 +29,15 @@ bool Map::loadFromFile(const std::string& filename) {
             CellType cell = EMPTY;
             
             switch (currentLine[x]) {
-                case 'c': cell = COIN; break;
-                case 'e': cell = ELECTRIC; break;
-                default: cell = EMPTY; break;
+                case 'c': 
+                    cell = COIN;
+                    break;
+                case 'e': 
+                    cell = ELECTRIC;
+                    break;
+                default: 
+                    cell = EMPTY;
+                    break;
             }
             
             data[y * width + x] = cell;
@@ -43,11 +49,11 @@ bool Map::loadFromFile(const std::string& filename) {
     return true;
 }
 
-CellType Map::getCell(int x, int y) const {
+CellType Map::getCell(int x, int y) const
+{
     if (x < 0 || x >= width || y < 0 || y >= height) {
         return EMPTY;
     }
-    
     return data[y * width + x];
 }
 
@@ -92,9 +98,15 @@ std::string Map::toString() const {
             CellType cell = getCell(x, y);
             
             switch (cell) {
-                case COIN: result += 'c'; break;
-                case ELECTRIC: result += 'e'; break;
-                default: result += '_'; break;
+                case COIN: 
+                    result += 'c';
+                    break;
+                case ELECTRIC: 
+                    result += 'e'; 
+                    break;
+                default: 
+                    result += '_'; 
+                    break;
             }
         }
         result += '\n';
@@ -106,6 +118,9 @@ std::string Map::toString() const {
 bool Map::fromString(const std::string& mapString) {
     std::istringstream stream(mapString);
     std::string line;
+    int y = 0;
+    int coinCount = 0;
+    int electricCount = 0;
     
     if (!std::getline(stream, line)) {
         debugPrint("Format de carte invalide: impossible de lire les dimensions");
@@ -123,38 +138,32 @@ bool Map::fromString(const std::string& mapString) {
     data.clear();
     data.resize(width * height, EMPTY);
     
-    int y = 0;
-    int coinCount = 0;
-    int electricCount = 0;
-    
     while (std::getline(stream, line) && y < height) {
         for (size_t x = 0; x < line.length() && x < static_cast<size_t>(width); x++) {
             CellType cell = EMPTY;
             
             switch (line[x]) {
-                case 'c': cell = COIN; coinCount++; break;
-                case 'e': cell = ELECTRIC; electricCount++; break;
-                default: cell = EMPTY; break;
+                case 'c': 
+                    cell = COIN; 
+                    coinCount++; 
+                    break;
+                case 'e': 
+                    cell = ELECTRIC; 
+                    electricCount++; 
+                    break;
+                default: 
+                    cell = EMPTY; 
+                    break;
             }
-            
             data[y * width + x] = cell;
         }
         y++;
     }
-    
     setupStartPositions();
-    debugPrint("Carte chargée depuis la chaîne: " + std::to_string(width) + "x" + std::to_string(height));
-    debugPrint("Éléments sur la carte: " + std::to_string(coinCount) + " pièces, " + 
-              std::to_string(electricCount) + " obstacles électriques");
-    
     const std::vector<Vector2>& positions = getStartPositions();
     for (size_t i = 0; i < positions.size(); i++) {
         Vector2 pos = positions[i];
         CellType cellAtStart = getCell(pos.x, pos.y);
-        debugPrint("Position initiale joueur " + std::to_string(i) + " à (" + 
-                  std::to_string(pos.x) + "," + std::to_string(pos.y) + 
-                  "), type de cellule: " + std::to_string(cellAtStart));
     }
-    
     return true;
 }
