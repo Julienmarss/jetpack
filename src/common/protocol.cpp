@@ -148,8 +148,12 @@ bool Protocol::sendGameState(int socket, GameState state, const std::array<Playe
         data.players[i].score = players[i].score;
         data.players[i].alive = players[i].alive ? 1 : 0;
         data.players[i].jetpackOn = players[i].jetpackOn ? 1 : 0; // ✅ Important
-    }
 
+        debugPrint("[PROTOCOLE] Envoi état jetpack joueur " + std::to_string(i) + 
+        ": " + std::to_string(data.players[i].jetpackOn) + 
+        " (original: " + std::to_string(players[i].jetpackOn) + ")");
+
+    }
     return sendPacket(socket, GAME_STATE, &data, sizeof(data));
 }
 

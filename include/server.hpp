@@ -42,6 +42,7 @@ private:
     void broadcastGameState();
     void endGame(int winnerId);
     int getConnectedClientCount() const;
+    void checkGameEndCondition();
 };
 
 #endif /* SERVER_HPP */
