@@ -48,6 +48,18 @@ int Protocol::receivePacket(int socket, int& packetType, void* buffer, int buffe
 
     if (dataLength > 0) {
         received = recv(socket, buffer, dataLength, 0);
+        if (received > 0) {
+            std::string hexDump = "Données reçues: ";
+            for (int i = 0; i < std::min(received, 16); i++) {
+                char byte = ((char*)buffer)[i];
+                char hex[3];
+                snprintf(hex, sizeof(hex), "%02X", (unsigned char)byte);
+                hexDump += hex;
+                hexDump += " ";
+            }
+            debugPrint(hexDump);
+        }
+        
         if (received <= 0) {
             debugPrint("Erreur lors de la réception des données du paquet : " + std::string(strerror(errno)));
             return received;
@@ -101,12 +113,15 @@ bool Protocol::sendPlayerPosition(int socket, int playerId, const Vector2& posit
         float y;
         int jetpack_on;
     } data;
-
+    
     data.player_id = playerId;
     data.x = position.x;
     data.y = position.y;
-    data.jetpack_on = jetpackOn ? 1 : 0; // Correctly set the jetpack state
-
+    data.jetpack_on = jetpackOn ? 1 : 0;
+    
+    debugPrint("Envoi du paquet PLAYER_POS: id=" + std::to_string(playerId) +
+              ", jetpack=" + std::to_string(data.jetpack_on));
+    
     return sendPacket(socket, PLAYER_POS, &data, sizeof(data));
 }
 

@@ -158,34 +158,32 @@ void Server::handleClientMessage(int clientIndex) {
     
     switch (packetType) {
         case PLAYER_POS: {
-            if (dataSize < (int)sizeof(int) * 3 + (int)sizeof(float) * 2) {
-                debugPrint("Paquet PLAYER_POS invalide");
-                return;
-            }
-        
             struct {
                 int player_id;
                 float x;
                 float y;
                 int jetpack_on;
             } data;
-        
+            
+            // Structure du paquet est player_id (4), x (4), y (4), jetpack_on (4) = 16 bytes
+            if (dataSize < 16) {
+                debugPrint("Paquet PLAYER_POS invalide: taille=" + std::to_string(dataSize));
+                return;
+            }
+            
             std::memcpy(&data, buffer, sizeof(data));
-        
+            
             if (data.player_id == clientIndex) {
-                players[clientIndex].position.x = data.x;
-                players[clientIndex].position.y = data.y;
                 players[clientIndex].jetpackOn = data.jetpack_on != 0;
-        
-                debugPrint(">> [SERVER] Joueur " + std::to_string(clientIndex) +
-                           " => jetpack=" + std::to_string(players[clientIndex].jetpackOn) +
-                           " pos=(" + std::to_string(data.x) + "," + std::to_string(data.y) + ")");
+                
+                debugPrint("REÇU PLAYER_POS: id=" + std::to_string(data.player_id) + 
+                           ", JETPACK=" + std::to_string(data.jetpack_on) + 
+                           " -> état jetpack mis à jour: " + std::to_string(players[clientIndex].jetpackOn));
             } else {
                 debugPrint("ID de joueur incorrect dans PLAYER_POS");
             }
             break;
         }
-        
         
         case READY: {
             debugPrint("Client " + std::to_string(clientIndex) + " prêt");
@@ -313,22 +311,30 @@ void Server::updateGameState() {
         currentTime - gameStartTime).count() >= GRACE_PERIOD_SECONDS;
 
     const float CELL_SIZE = 32.0f;
-    float floorY = (gameMap.getHeight() - 2) * CELL_SIZE - PLAYER_HEIGHT;
+    float floorY = (gameMap.getHeight() - 2) * CELL_SIZE;
 
     for (int i = 0; i < MAX_PLAYERS; i++) {
         if (players[i].alive) {
+            // Appliquer la physique avec un effet beaucoup plus fort pour être visible
             if (players[i].jetpackOn) {
-                players[i].velocityY -= JETPACK_FORCE;
-                if (players[i].velocityY < MAX_UP_SPEED)
-                    players[i].velocityY = MAX_UP_SPEED;
+                debugPrint("JETPACK ACTIF pour joueur " + std::to_string(i));
+                players[i].velocityY -= JETPACK_FORCE * 5.0f;  // Force très augmentée pour tester
+                if (players[i].velocityY < MAX_UP_SPEED * 3.0f)
+                    players[i].velocityY = MAX_UP_SPEED * 3.0f;
             } else {
-                players[i].velocityY += GRAVITY;
+                players[i].velocityY += GRAVITY * 2.0f;  // Gravité augmentée
                 if (players[i].velocityY > MAX_DOWN_SPEED)
                     players[i].velocityY = MAX_DOWN_SPEED;
             }
+            
+            // Debug avant déplacement
+            debugPrint("Joueur " + std::to_string(i) + " jetpack=" + 
+                     std::to_string(players[i].jetpackOn) + " avant déplacement");
 
+            // Mise à jour de la position verticale
             players[i].position.y += players[i].velocityY;
             
+            // Limites verticales
             if (players[i].position.y < 0) {
                 players[i].position.y = 0;
                 players[i].velocityY = 0;
@@ -337,14 +343,17 @@ void Server::updateGameState() {
                 players[i].velocityY = 0;
             }
 
+            // Avancer horizontalement
             players[i].position.x += HORIZONTAL_SPEED;
 
+            // Collisions
             if (gracePeriodOver) {
                 checkCollisions(i);
             } else {
                 checkCoinCollisions(i);
             }
 
+            // Fin de niveau
             if (players[i].position.x >= gameMap.getWidth() * CELL_SIZE - PLAYER_WIDTH) {
                 endGame(i);
                 return;
