@@ -94,20 +94,19 @@ bool Protocol::receiveMap(int socket, Map& map)
     return map.fromString(std::string(buffer, dataSize));
 }
 
-bool Protocol::sendPlayerPosition(int socket, int playerId, const Vector2& position, bool jetpackOn)
-{
+bool Protocol::sendPlayerPosition(int socket, int playerId, const Vector2& position, bool jetpackOn) {
     struct {
         int player_id;
         float x;
         float y;
         int jetpack_on;
     } data;
-    
+
     data.player_id = playerId;
     data.x = position.x;
     data.y = position.y;
-    data.jetpack_on = jetpackOn ? 1 : 0;
-    
+    data.jetpack_on = jetpackOn ? 1 : 0; // Correctly set the jetpack state
+
     return sendPacket(socket, PLAYER_POS, &data, sizeof(data));
 }
 
@@ -121,24 +120,27 @@ bool Protocol::sendGameState(int socket, GameState state, const std::array<Playe
             float y;
             int score;
             int alive;
+            int jetpackOn; // ✅ Ajout du champ
         } players[MAX_PLAYERS];
     } data;
-    
+
     data.game_state = state;
-    
+
     for (int i = 0; i < MAX_PLAYERS; ++i) {
         data.players[i].player_id = players[i].id;
         data.players[i].x = players[i].position.x;
         data.players[i].y = players[i].position.y;
         data.players[i].score = players[i].score;
         data.players[i].alive = players[i].alive ? 1 : 0;
+        data.players[i].jetpackOn = players[i].jetpackOn ? 1 : 0; // ✅ Important
     }
-    
+
     return sendPacket(socket, GAME_STATE, &data, sizeof(data));
 }
 
 bool Protocol::sendGameOver(int socket, int winnerId, const std::array<int, MAX_PLAYERS>& scores)
 {
+    //Foutre la struct dans une class dans un .hpp (URGENT)
     struct {
         int winner_id;
         int scores[MAX_PLAYERS];
@@ -156,6 +158,12 @@ bool Protocol::sendGameOver(int socket, int winnerId, const std::array<int, MAX_
 bool Protocol::sendWaitingStatus(int socket, int connectedPlayers)
 {
     return sendPacket(socket, WAITING_STATUS, &connectedPlayers, sizeof(int));
+}
+
+inline bool sendInt(int socket, int type, int value) {
+    char payload[sizeof(int)];
+    std::memcpy(payload, &value, sizeof(int));
+    return Protocol::sendPacket(socket, type, payload, sizeof(int));
 }
 
 

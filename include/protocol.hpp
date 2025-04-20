@@ -10,6 +10,7 @@
 
 #include "common.hpp"
 #include "map.hpp"
+#define ASSIGN_PLAYER_ID 7
 
 struct PacketHeader {
     int type;

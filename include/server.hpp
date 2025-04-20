@@ -29,6 +29,8 @@ private:
     std::array<int, MAX_PLAYERS> clientSockets;
     GameState gameState = WAITING;
     std::atomic<bool> running{false};
+    const float GRACE_PERIOD_SECONDS = 3.0f;
+    std::chrono::steady_clock::time_point gameStartTime;
 
     void handleConnections();
     bool acceptClient();
@@ -36,6 +38,7 @@ private:
     void gameLoop();
     void updateGameState();
     void checkCollisions(int playerIndex);
+    void checkCoinCollisions(int playerIndex);
     void broadcastGameState();
     void endGame(int winnerId);
     int getConnectedClientCount() const;
